@@ -39,58 +39,58 @@ func (col *collector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (col *collector) Collect(ch chan<- prometheus.Metric) {
-	if val, err := col.Temovex.GetDesired(); err != nil {
+	if val, err := col.Temovex.GetSet(); err != nil {
 		log.Fatal(err.Error())
 	} else {
 		ch <- prometheus.MustNewConstMetric(
 			col.tempMetric,
 			prometheus.GaugeValue,
 			math.Round(val*10)/10,
-			"desired",
+			"set",
 		)
 	}
 
-	if val, err := col.Temovex.GetExhaust(); err != nil {
+	if val, err := col.Temovex.GetAL(); err != nil {
 		log.Fatal(err.Error())
 	} else {
 		ch <- prometheus.MustNewConstMetric(
 			col.tempMetric,
 			prometheus.GaugeValue,
 			math.Round(val*10)/10,
-			"exhaust",
+			"al",
 		)
 	}
 
-	if val, err := col.Temovex.GetExtract(); err != nil {
+	if val, err := col.Temovex.GetFL(); err != nil {
 		log.Fatal(err.Error())
 	} else {
 		ch <- prometheus.MustNewConstMetric(
 			col.tempMetric,
 			prometheus.GaugeValue,
 			math.Round(val*10)/10,
-			"extract",
+			"fl",
 		)
 	}
 
-	if val, err := col.Temovex.GetOutdoor(); err != nil {
+	if val, err := col.Temovex.GetUL(); err != nil {
 		log.Fatal(err.Error())
 	} else {
 		ch <- prometheus.MustNewConstMetric(
 			col.tempMetric,
 			prometheus.GaugeValue,
 			math.Round(val*10)/10,
-			"outdoor",
+			"ul",
 		)
 	}
 
-	if val, err := col.Temovex.GetSupply(); err != nil {
+	if val, err := col.Temovex.GetTL(); err != nil {
 		log.Fatal(err.Error())
 	} else {
 		ch <- prometheus.MustNewConstMetric(
 			col.tempMetric,
 			prometheus.GaugeValue,
 			math.Round(val*10)/10,
-			"supply",
+			"tl",
 		)
 	}
 }

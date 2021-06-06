@@ -33,28 +33,28 @@ func NewClient(address string) (*Client, error) {
 	return &client, nil
 }
 
-// GetDesired temperature
-func (client *Client) GetDesired() (float64, error) {
+// GetSet temperature
+func (client *Client) GetSet() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x00, 0x08})
 }
 
-// GetOutdoor temperature
-func (client *Client) GetOutdoor() (float64, error) {
+// GetUL temperature
+func (client *Client) GetUL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x04, 0xec})
 }
 
-// GetSupply temperature
-func (client *Client) GetSupply() (float64, error) {
+// GetTL temperature
+func (client *Client) GetTL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x39, 0x02, 0xfa})
 }
 
-// GetExtract temperature
-func (client *Client) GetExtract() (float64, error) {
+// GetFL temperature
+func (client *Client) GetFL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x08, 0x00})
 }
 
-// GetExhaust temperature
-func (client *Client) GetExhaust() (float64, error) {
+// GetAL temperature
+func (client *Client) GetAL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x3b, 0x00, 0x95})
 }
 
