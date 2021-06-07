@@ -1,0 +1,43 @@
+---
+- hosts: all
+  become: true
+
+  handlers:
+  - name: restart temovex-exporter
+    systemd:
+      daemon_reload: yes
+      name: temovex-exporter
+      state: restarted
+
+  tasks:
+  - name: copy temovex-exporter binary
+    copy:
+      src: temovex-exporter-linux-arm7
+      dest: /usr/local/bin/temovex-exporter
+      owner: root
+      group: root
+      mode: '0755'
+    notify:
+    - restart temovex-exporter
+
+  - name: create systemd unit file
+    copy:
+      dest: /etc/systemd/system/temovex-exporter.service
+      content: |
+        [Unit]
+        Description=temovex-exporter
+        After=network.target
+        [Service]
+        Type=simple
+        ExecStart=/usr/local/bin/temovex-exporter
+        Environment="TEMOVEX_ADDR=192.168.3.2:26486"
+        Restart=always
+        [Install]
+        WantedBy=multi-user.target
+    notify:
+    - restart temovex-exporter
+
+  - name: enable service
+    systemd:
+      name: temovex-exporter
+      enabled: yes
