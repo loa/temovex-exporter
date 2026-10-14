@@ -33,27 +33,33 @@ func NewClient(address string) (*Client, error) {
 	return &client, nil
 }
 
-// GetSet temperature
+// Temperature reads are MULCMD (0xC8) wrapped RRP (0xB6) requests:
+// PLA, ELA, 0xC8, length, opcode, line, cell high, cell low.
+// The specification encodes a parameter cell as high = cell/60 and low = cell%60,
+// so the low byte is 0–59. GetUL, GetTL, and GetAL keep the stored low bytes
+// 0xEC, 0xFA, and 0x95.
+
+// GetSet temperature. Line 4, cell 8.
 func (client *Client) GetSet() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x00, 0x08})
 }
 
-// GetUL temperature
+// GetUL temperature. Line 4. Low address byte 0xEC is outside cell%60.
 func (client *Client) GetUL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x04, 0xec})
 }
 
-// GetTL temperature
+// GetTL temperature. Line 0x39. Low address byte 0xFA is outside cell%60.
 func (client *Client) GetTL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x39, 0x02, 0xfa})
 }
 
-// GetFL temperature
+// GetFL temperature. Line 4, cell 480.
 func (client *Client) GetFL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x04, 0x08, 0x00})
 }
 
-// GetAL temperature
+// GetAL temperature. Line 0x3B. Low address byte 0x95 is outside cell%60.
 func (client *Client) GetAL() (float64, error) {
 	return client.getFloat([]byte{0xff, 0x1e, 0xc8, 0x04, 0xb6, 0x3b, 0x00, 0x95})
 }
@@ -68,7 +74,34 @@ func (client *Client) getFloat(msg []byte) (float64, error) {
 		return 0.0, err
 	}
 
+	// A MULCMD real reply is SOA, two header bytes, a float32, the checksum, and EOM.
+	// Four bytes is the specification's error frame: SOA, code, checksum, EOM.
+	if len(msg) == 4 {
+		return 0.0, controllerError(msg[1])
+	}
+	// SOA + 2 header bytes + float32 + checksum + EOM.
+	if len(msg) < 9 {
+		return 0.0, fmt.Errorf("expected float response, got %d bytes", len(msg))
+	}
 	return parseFloat(msg[3 : len(msg)-2])
+}
+
+func controllerError(code byte) error {
+	reasons := map[byte]string{
+		0x15: "variable not found or access denied",
+		0x40: "framing error",
+		0x41: "checksum mismatch",
+		0x42: "empty response",
+		0x47: "logic value error",
+		0x48: "index out of range",
+		0x49: "integer out of range",
+		0x50: "real value error",
+		0x51: "string value error",
+	}
+	if reason, ok := reasons[code]; ok {
+		return fmt.Errorf("controller error 0x%02x: %s", code, reason)
+	}
+	return fmt.Errorf("controller error 0x%02x", code)
 }
 
 func (client *Client) send(data []byte) error {
@@ -109,20 +142,26 @@ func encode(msg []byte) []byte {
 }
 
 func decode(msg []byte) ([]byte, error) {
-	// unescape
-	msg = unescape(msg)
+	msg, err := unescape(msg)
+	if err != nil {
+		return nil, err
+	}
+	// Answer frames open with SOA and close with EOM. The shortest valid
+	// answer is SOA, checksum, EOM.
+	if len(msg) < 3 || msg[0] != 0x3d || msg[len(msg)-1] != 0x3e {
+		return nil, fmt.Errorf("invalid frame")
+	}
 
 	payload := msg[1 : len(msg)-2]
 	providedChecksum := msg[len(msg)-2]
 
-	// calculate checksum
+	// XOR every byte after SOA and before the checksum. SOA and EOM are excluded.
 	var checksum byte
 	for _, p := range payload {
 		checksum ^= p
 	}
-	// verify checksum
 	if providedChecksum != checksum {
-		return []byte{}, fmt.Errorf("invalid checksum")
+		return nil, fmt.Errorf("invalid checksum")
 	}
 
 	return msg, nil
@@ -143,24 +182,29 @@ func escape(payload []byte) []byte {
 	return res
 }
 
-func unescape(payload []byte) []byte {
+func unescape(payload []byte) ([]byte, error) {
 	res := []byte{}
 
 	for i := 0; i < len(payload); i++ {
 		if payload[i] == 0x1b {
-			// if escape is found, skip escape and invert following byte
+			// Skip the escape and restore the following byte with its complement.
 			i++
+			if i >= len(payload) {
+				return nil, fmt.Errorf("truncated escape")
+			}
 			res = append(res, payload[i]^0xff)
 		} else {
 			res = append(res, payload[i])
 		}
 	}
 
-	return res
+	return res, nil
 }
 
 func parseFloat(b []byte) (float64, error) {
-	// parse float from little endian bytes
+	if len(b) != 4 {
+		return 0, fmt.Errorf("expected 4 byte float, got %d", len(b))
+	}
 	i := binary.LittleEndian.Uint32(b)
 	return float64(math.Float32frombits(i)), nil
 }

@@ -61,7 +61,7 @@ TCP reads from this repository use the EXOline session below.
 
 `temovex.NewClient` dials `TEMOVEX_ADDR`. The unit file in `playbook.yaml` sets that to `192.168.3.2:26486`. Port 26486 is the EXOline-TCP port. The dial gives up after one minute. The socket then stays open for the process lifetime, and every scrape reuses it. Later reads and writes have no deadline.
 
-Requests are synchronous. The client writes one frame, reads until `0x3E`, and only then sends the next frame.
+Requests are synchronous, which is the EXOline-TCP exchange: the client writes one frame, reads until `0x3E`, and only then sends the next frame. `decode` accepts an answer only when it opens with `0x3D` and closes with `0x3E`.
 
 `main.go` serves HTTP on `:8080`.
 
@@ -114,7 +114,7 @@ Each temperature method sends eight payload bytes. The first five are fixed:
 | 3 | `04` | Length of that command, in bytes |
 | 4 | `B6` | Read a real parameter. The answer is an IEEE-754 binary32 |
 
-The last three bytes select the variable: line number, then two address bytes. The cell index those bytes name is `high × 60 + low`. `GetSet`, `GetUL`, `GetTL`, `GetFL`, and `GetAL` each pass a fixed array to `getFloat`.
+The last three bytes select the variable: line number, then two address bytes. The specification encodes a parameter cell as `high = cell / 60` and `low = cell % 60`, so the low byte is 0–59. `GetSet`, `GetUL`, `GetTL`, `GetFL`, and `GetAL` each pass a fixed array to `getFloat`.
 
 Byte 0 is `FF`, the PLA this direct TCP session sends. The controller PLA in the signal list is 254. Byte 1 is ELA 30 (`1E`), the same ELA as the list.
 
@@ -134,21 +134,27 @@ For these reads the decoded body is a two-byte header and a little-endian float3
 3D | 05 | 00 | float32 little-endian | checksum | 3E
 ```
 
-`getFloat` parses `msg[3 : len(msg)-2]`, which is those four float bytes.
+`getFloat` parses `msg[3 : len(msg)-2]` when that slice is four bytes.
+
+A four-byte answer is the specification's error frame: `3D`, one error code, the checksum, and `3E`. Code `15` means the variable was not found or access was denied. `getFloat` returns that code. A reply that is neither a float frame nor an error frame returns an error. `parseFloat` accepts only four bytes, so a short body cannot be read as a float.
 
 ### Values scraped
 
 The method names use the Temovex abbreviations: UL is outdoor air (uteluft), TL is supply air (tilluft), FL is extract air (frånluft), and AL is exhaust air (avluft). `GetSet` is the supply-air setpoint. The collector asks for them in the order setpoint, exhaust, extract, outdoor, supply. A read error stops the process with `log.Fatal`.
 
-The low address byte is greater than 59 for outdoor, supply, and exhaust. Those three frames are stored that way in the client. The cell column is still `high × 60 + low`.
+`GetSet` is line 4, cell 8 (`00 08`). `GetFL` is line 4, cell 480 (`08 00`). Both low bytes are in 0–59. `GetUL`, `GetTL`, and `GetAL` send low bytes `EC`, `FA`, and `95`. Those are the bytes stored in the client, and they fall outside `cell % 60`.
 
-| Method | `name` label | Reading | Line | Address bytes | Cell | Checksum | Payload |
-| --- | --- | --- | ---: | --- | ---: | --- | --- |
+| Method | `name` label | Reading | Line | Address bytes | Spec cell | Checksum | Payload |
+| --- | --- | --- | ---: | --- | --- | --- | --- |
 | `GetSet` | `set` | Supply-air setpoint | 4 | `00 08` | 8 | `97` | `FF 1E C8 04 B6 04 00 08` |
-| `GetAL` | `al` | Exhaust air | 59 (`3B`) | `00 95` | 149 | `35` | `FF 1E C8 04 B6 3B 00 95` |
+| `GetAL` | `al` | Exhaust air | 59 (`3B`) | `00 95` | low byte outside 0–59 | `35` | `FF 1E C8 04 B6 3B 00 95` |
 | `GetFL` | `fl` | Extract air | 4 | `08 00` | 480 | `97` | `FF 1E C8 04 B6 04 08 00` |
-| `GetUL` | `ul` | Outdoor air | 4 | `04 EC` | 476 | `77` | `FF 1E C8 04 B6 04 04 EC` |
-| `GetTL` | `tl` | Supply air | 57 (`39`) | `02 FA` | 370 | `5A` | `FF 1E C8 04 B6 39 02 FA` |
+| `GetUL` | `ul` | Outdoor air | 4 | `04 EC` | low byte outside 0–59 | `77` | `FF 1E C8 04 B6 04 04 EC` |
+| `GetTL` | `tl` | Supply air | 57 (`39`) | `02 FA` | low byte outside 0–59 | `5A` | `FF 1E C8 04 B6 39 02 FA` |
+
+### Transport choices
+
+Reads wait on `ReadBytes(0x3E)` until the closing byte arrives or the connection fails. The dial itself gives up after one minute. The specification's reference client uses a 3 second read timeout and sends POLL (`98`, with PLA and ELA and no parameters) as a keepalive. This exporter waits for `0x3E` with no read deadline, and the next temperature request is what keeps the session in use. Encryption is optional in the specification, and these frames are sent in the clear.
 
 ## Input status registers
 
