@@ -1,4 +1,4 @@
-module github.com/loa/temovex-exporter
+module github.com/loa/temovex-exporter/temovex-bridge
 
 go 1.16
 
