@@ -3,7 +3,7 @@ package main
 import (
 	"math"
 
-	"github.com/loa/temovex-exporter/temovex-bridge/temovex"
+	"github.com/loa/temovex-exporter/temovex"
 
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
